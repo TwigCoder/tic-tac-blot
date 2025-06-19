@@ -1,3 +1,3 @@
 {
-    "img_1.jpg": [[0,1,0],[1,2,0],[0,1,0]] // AN EXAMPLE FOR NOW (YES, I KNOW COMMENTS ARE NOT VALID IN JSON)
+    "img_1.jpeg": [[1,1,2],[2,1,2],[1,1,2]]
 }
