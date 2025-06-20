@@ -5,7 +5,7 @@ import torchvision.models as models
 from torchvision import transforms
 from PIL import Image
 
-training = True
+training = False
 
 class BoardReader(nn.Module):
     def __init__(self):
@@ -71,7 +71,6 @@ def train_model():
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 30, 0.5)
 
     model.train()
-    best_loss = float('inf')
 
     for epoch in range(50):
         total_loss = 0
@@ -83,12 +82,7 @@ def train_model():
             optimizer.step()
             total_loss += loss.item()
 
-        avg_loss = total_loss / len(dataloader)
         scheduler.step()
-
-        if avg_loss < best_loss:
-            best_loss = avg_loss
-            torch.save(model.state_dict(), 'board_reader_inc.pth')
     
     torch.save(model.state_dict(), 'board_reader_inc.pth')
     return model
@@ -105,17 +99,13 @@ def predict_board(image_path, model):
     image = transform(image).unsqueeze(0)
 
     model.eval()
-    predictions = []
+    predictions = []   
 
-    for angle in [0,-2,2]:
-        rotated = image.rotate(angle)
-        tensor = transform(rotated).unsqueeze(0)    
-
-        with torch.no_grad():
-            output = model(tensor)
-            predicted = torch.argmax(output, dim=2).squeeze().numpy()
-            predictions.append(predicted)
-            return predicted.reshape(3, 3)
+    with torch.no_grad():
+        output = model(image)
+        predicted = torch.argmax(output, dim=2).squeeze().numpy()
+        predictions.append(predicted)
+        return predicted.reshape(3, 3)
         
     avg_pred = torch.mean(torch.stack(predictions), dim=0)
     final_pred = torch.argmax(avg_pred, dim=2).squeeze().numpy()
@@ -126,6 +116,6 @@ if training:
     model = train_model()
 
 model = BoardReader()
-model.load_state_dict(torch.load('board_reader_inc.pth'))
-board_state = predict_board('test.jpeg', model)
+model.load_state_dict(torch.load('board_reader.pth'))
+board_state = predict_board('data/test.jpeg', model)
 print(board_state)
