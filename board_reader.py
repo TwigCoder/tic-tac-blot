@@ -13,6 +13,17 @@ class BoardReader(nn.Module):
         self.backbone = models.resnet18(pretrained=True)
         self.backbone.fc = nn.Linear(512, 27)
 
+        for param in list(self.backbone.parameters())[:-20]:
+            param.requires_grad = False
+
+        self.backbone.fc = nn.Sequential(
+            nn.Dropout(0.5),
+            nn.Linear(512, 256),
+            nn.ReLU(),
+            nn.Dropout(0.3),
+            nn.Linear(256,27)
+        )
+
     def forward(self, x):
         return self.backbone(x).view(-1, 9, 3)
 
@@ -43,6 +54,10 @@ class TicTacToeDataset(Dataset):
 def train_model():
     transform = transforms.Compose([
         transforms.Resize((224, 224)),
+        transforms.RandomRotation(5),
+        transforms.RandomPerspective(0.5),
+        transforms.ColorJitter(0.4, 0.4, 0.3),
+        transforms.RandomAffine(0, (0.1, 0.1), (0.9, 1.1)),
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     ])
@@ -52,9 +67,11 @@ def train_model():
 
     model = BoardReader()
     criterion = nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.0001, weight_decay=0.0001)
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 30, 0.5)
 
     model.train()
+    best_loss = float('inf')
 
     for epoch in range(50):
         total_loss = 0
@@ -66,7 +83,14 @@ def train_model():
             optimizer.step()
             total_loss += loss.item()
 
-    torch.save(model.state_dict(), 'board_reader.pth')
+        avg_loss = total_loss / len(dataloader)
+        scheduler.step()
+
+        if avg_loss < best_loss:
+            best_loss = avg_loss
+            torch.save(model.state_dict(), 'board_reader_inc.pth')
+    
+    torch.save(model.state_dict(), 'board_reader_inc.pth')
     return model
 
 
@@ -81,15 +105,27 @@ def predict_board(image_path, model):
     image = transform(image).unsqueeze(0)
 
     model.eval()
-    with torch.no_grad():
-        output = model(image)
-        predicted = torch.argmax(output, dim=2).squeeze().numpy()
-        return predicted.reshape(3, 3)
+    predictions = []
+
+    for angle in [0,-2,2]:
+        rotated = image.rotate(angle)
+        tensor = transform(rotated).unsqueeze(0)    
+
+        with torch.no_grad():
+            output = model(tensor)
+            predicted = torch.argmax(output, dim=2).squeeze().numpy()
+            predictions.append(predicted)
+            return predicted.reshape(3, 3)
+        
+    avg_pred = torch.mean(torch.stack(predictions), dim=0)
+    final_pred = torch.argmax(avg_pred, dim=2).squeeze().numpy()
+
+    return final_pred.reshape(3, 3)
 
 if training:
     model = train_model()
 
 model = BoardReader()
-model.load_state_dict(torch.load('board_reader.pth'))
-board_state = predict_board('test_image.jpeg', model)
+model.load_state_dict(torch.load('board_reader_inc.pth'))
+board_state = predict_board('test.jpeg', model)
 print(board_state)
